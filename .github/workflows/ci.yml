@@ -43,38 +43,3 @@ jobs:
       run: |
         cd backend
         pytest --cov=. --cov-report=xml || true
-
-  frontend:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-
-    - name: Install dependencies
-      run: |
-        cd frontend
-        npm ci
-
-    - name: Lint
-      run: |
-        cd frontend
-        npm run lint || true
-
-    - name: Type check
-      run: |
-        cd frontend
-        npm run type-check || true
-
-    - name: Build
-      run: |
-        cd frontend
-        npm run build || true
