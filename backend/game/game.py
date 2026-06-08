@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from .player import Player, PlayerState
 from .gamestate import GameState
 from .move import Move
-from .enums import Source
+from .enums import Source, Tile
 from .constants import TILES_PER_COLOR, TILES_PER_FACTORY, COLORS
 
 
@@ -33,7 +33,9 @@ class Game:
         random: Random number generator instance for shuffle and tile drawing.
     """
 
-    def __init__(self, players: List[Player], random_seed: Optional[int] = None) -> None:
+    def __init__(
+        self, players: List[Player], random_seed: Optional[int] = None
+    ) -> None:
         """Initialize game with mutable state.
 
         All tiles start in the discard pile. When start_round() is called,
@@ -60,9 +62,11 @@ class Game:
         # Mutable game state
         self.round_number = 1
         self.turn_number = 1
-        self.bag: List[int] = []
-        self.discard: List[int] = [tile for tile in COLORS for _ in range(TILES_PER_COLOR)]
-        self.factories: Dict[Source, List[int]] = {
+        self.bag: List[Tile] = []
+        self.discard: List[Tile] = [
+            tile for tile in COLORS for _ in range(TILES_PER_COLOR)
+        ]
+        self.factories: Dict[Source, List[Tile]] = {
             Source.F1: [],
             Source.F2: [],
             Source.F3: [],
@@ -70,7 +74,9 @@ class Game:
             Source.F5: [],
             Source.CENTER: [],
         }
-        self.player_states: List[PlayerState] = [PlayerState(player_id=p.player_id) for p in players]
+        self.player_states: List[PlayerState] = [
+            PlayerState(player_id=p.player_id) for p in players
+        ]
 
         # History tracking
         self.states: List[GameState] = []
