@@ -152,6 +152,101 @@ Each decision includes:
 
 ---
 
+## Decision: Game State Architecture - Immutable GameState Pattern
+
+**Date**: 2026-06-07  
+**Topic**: How to structure game state and moves?  
+**Decision**: Immutable GameState pattern with separate Game class tracking history
+
+**Rationale**:
+- GameState is an immutable snapshot of the complete game at one point
+- Game class holds list of all GameStates (nodes) and Moves (edges)
+- Each move returns a new GameState rather than mutating current state
+- Natural fit for exploring multiple moves from same state (useful for ML bots)
+- Full replay capability - can load any state from history
+- Clear testing: "given state X, after move Y, expect state Z"
+
+**Implications**:
+- More memory overhead (stores all states), but acceptable for turn-based game
+- Pure functions for move validation and application
+- Can implement undo/redo by replaying from specific state
+- State transitions are explicit and trackable
+
+**Alternatives Considered**:
+- Mutable Game: Simpler code, but harder to explore alternate moves for ML
+- Event sourcing: More complex, not needed for this learning project
+
+---
+
+## Decision: Tile Distribution and Shuffling
+
+**Date**: 2026-06-07  
+**Topic**: How to manage tile bag and discard?  
+**Decision**: All tiles start in discard; start_round() moves to bag and shuffles
+
+**Rationale**:
+- Simplifies initialization (no need to distribute initial bag)
+- Natural game flow: discard → bag shuffle → factory fill
+- Each game has seeded RNG for reproducibility (critical for testing and ML training)
+- Isolated RNG per game prevents other random operations from affecting gameplay
+
+**Implications**:
+- start_round() is required before first round can begin
+- Game constructor must be followed by start_round() call
+- Identical games with same seed will have identical tile draws
+
+**Alternatives Considered**:
+- Pre-fill bag at initialization: Less intuitive, harder to understand flow
+- Global RNG: Would make games non-reproducible if other code uses random
+
+---
+
+## Decision: Turn Numbering (1-indexed)
+
+**Date**: 2026-06-07  
+**Topic**: How to number turns in the game?  
+**Decision**: Turn numbers are 1-indexed and ever-increasing (not reset per round)
+
+**Rationale**:
+- Matches common game terminology ("turn 1", "turn 2", etc.)
+- Never-increasing counter allows for clear game replay and logging
+- current_player_index calculated as (turn_number - 1) % num_players
+
+**Implications**:
+- turn_number starts at 1, not 0
+- Not limited to player count - continues incrementing all game
+- Round number separate from turn number
+
+**Alternatives Considered**:
+- 0-indexed turns: Easier for modulo math, but less intuitive
+- Turn reset per round: Would lose information about game duration
+
+---
+
+## Decision: Separate Player and PlayerState Classes
+
+**Date**: 2026-06-07  
+**Topic**: How to represent player information?  
+**Decision**: Split into static Player and dynamic PlayerState
+
+**Rationale**:
+- Player holds static info (id, name, avatar, color, type) - set once
+- PlayerState holds dynamic info (score, pattern_lines, floor, wall) - changes
+- GameState contains list of Players and list of PlayerStates
+- Matches immutable pattern: Players never change, only PlayerStates change
+- Cleaner separation of concerns
+
+**Implications**:
+- Every GameState creation includes new PlayerStates but same Players
+- Less memory overhead (don't duplicate static info)
+- Clear intent: which data is mutable vs immutable
+
+**Alternatives Considered**:
+- Single Player class: Simpler but mixes static/dynamic data
+- No separation: Would require full object copy for each state
+
+---
+
 ## Future Decisions to Make
 
 - [ ] Multiplayer architecture (local only vs. networked)

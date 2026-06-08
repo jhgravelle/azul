@@ -3,30 +3,38 @@ Game class for orchestrating Azul game flow.
 """
 
 import random
-from typing import List, Optional
+from typing import Dict, List, Optional
 from .player import Player, PlayerState
 from .gamestate import GameState
 from .move import Move
-from .constants import TILES_PER_COLOR, COLORS
+from .enums import Source
+from .constants import TILES_PER_COLOR, TILES_PER_FACTORY, COLORS
 
 
 class Game:
-    """Orchestrates the game flow with full history tracking.
+    """Orchestrates the game flow with mutable state and history tracking.
 
-    States are like nodes and moves are like edges in the game graph.
-    Tracks all previous states and moves for full replay capability.
+    Game maintains mutable state (current round, turn, bag, discard, factories, player states).
+    GameState is a snapshot of the current state at a point in time.
+    Tracks all previous states and moves as history for full replay capability.
     Includes random seed for reproducible games (useful for testing and ML).
 
     Attributes:
         players: The Player objects (static, same throughout).
-        states: List of all GameState objects in chronological order.
-        moves: List of all Move objects in chronological order.
+        round_number: Current round number (mutable, starts at 1).
+        turn_number: Current turn number (mutable, 1-indexed, ever-increasing).
+        bag: Current tiles available in bag (mutable).
+        discard: Current tiles in discard pile (mutable).
+        factories: Current tiles in each factory/center (mutable).
+        player_states: Current state of each player (mutable).
+        states: List of all GameState snapshots in chronological order (history).
+        moves: List of all Move objects in chronological order (history).
         random_seed: Seed used for random number generator.
         random: Random number generator instance for shuffle and tile drawing.
     """
 
     def __init__(self, players: List[Player], random_seed: Optional[int] = None) -> None:
-        """Initialize game with players.
+        """Initialize game with mutable state.
 
         All tiles start in the discard pile. When start_round() is called,
         they move to bag and are shuffled.
@@ -43,56 +51,79 @@ class Game:
             raise ValueError("Game must have 2-4 players")
 
         self.players = players
-        self.states: List[GameState] = []
-        self.moves: List[Move] = []
 
         # Random number generation with seed for reproducibility
         # This RNG is isolated to the game and won't be affected by other random operations
         self.random_seed = random_seed
         self.random = random.Random(random_seed)
 
-        # Create initial player states
-        initial_player_states = [PlayerState(player_id=p.player_id) for p in players]
+        # Mutable game state
+        self.round_number = 1
+        self.turn_number = 1
+        self.bag: List[int] = []
+        self.discard: List[int] = [tile for tile in COLORS for _ in range(TILES_PER_COLOR)]
+        self.factories: Dict[Source, List[int]] = {
+            Source.F1: [],
+            Source.F2: [],
+            Source.F3: [],
+            Source.F4: [],
+            Source.F5: [],
+            Source.CENTER: [],
+        }
+        self.player_states: List[PlayerState] = [PlayerState(player_id=p.player_id) for p in players]
 
-        # Create initial game state
-        # Bag starts empty, discard has all tiles
-        all_tiles = [tile for tile in COLORS for _ in range(TILES_PER_COLOR)]
-
-        initial_state = GameState(
-            players=players,
-            player_states=initial_player_states,
-            round_number=1,
-            turn_number=1,
-            bag=[],
-            discard=all_tiles,
-            factories={},
-        )
-
-        self.states.append(initial_state)
+        # History tracking
+        self.states: List[GameState] = []
+        self.moves: List[Move] = []
+        self.states.append(self.current_state)
 
     @property
     def current_state(self) -> GameState:
-        """Return current game state (the last state in history)."""
-        return self.states[-1]
+        """Return snapshot of current game state."""
+        return GameState(
+            players=self.players,
+            player_states=self.player_states,
+            round_number=self.round_number,
+            turn_number=self.turn_number,
+            bag=self.bag,
+            discard=self.discard,
+            factories=self.factories,
+        )
+
+    def _fill_factories(self) -> None:
+        """Fill all factories with tiles from bag, refilling from discard as needed.
+
+        For each factory (F1-F5), takes 4 tiles one by one:
+        - If bag is empty, transfers discard to bag and shuffles
+        - If both bag and discard are empty, stops
+        - Center starts empty
+        """
+        # Clear factories for new round
+        for source in self.factories:
+            self.factories[source] = []
+
+        factory_sources = [Source.F1, Source.F2, Source.F3, Source.F4, Source.F5]
+
+        for factory_source in factory_sources:
+            for _ in range(TILES_PER_FACTORY):
+                # If bag is empty, refill from discard
+                if not self.bag:
+                    if not self.discard:
+                        # Can't fill more
+                        break
+                    # Move discard to bag and shuffle
+                    self.bag = self.discard
+                    self.discard = []
+                    self.random.shuffle(self.bag)
+
+                # Take one tile from bag and add to factory
+                tile = self.bag.pop()
+                self.factories[factory_source].append(tile)
 
     def start_round(self) -> GameState:
-        """Fill factories with tiles from the bag for a new round.
-
-        1. Moves all tiles from discard to bag
-        2. Shuffles bag using seeded random generator
-        3. Distributes tiles to factories
-        4. Center starts empty
-
-        Returns:
-            New GameState with factories filled and bag updated.
-
-        Raises:
-            ValueError: If not enough tiles in bag to fill factories.
-        """
-        # TODO: Move discard to bag
-        # TODO: Shuffle bag
-        # TODO: Distribute to factories
-        # TODO: Create new GameState with updated bag and factories
+        """Fill factories for new round, record state, return snapshot."""
+        self._fill_factories()
+        self.states.append(self.current_state)
         return self.current_state
 
     def make_move(self, move: Move) -> GameState:
@@ -102,7 +133,7 @@ class Game:
             move: The Move to apply.
 
         Returns:
-            New GameState after the move.
+            Snapshot of game state after the move.
 
         Raises:
             ValueError: If move is invalid.
@@ -110,7 +141,7 @@ class Game:
         # TODO: Validate move
         # TODO: Apply move
         # TODO: Increment turn_number
-        # TODO: Append to states and moves
+        # TODO: Append to moves and states
         return self.current_state
 
     def end_round(self) -> GameState:
@@ -123,7 +154,7 @@ class Game:
         4. Clear floor and return tiles to discard
 
         Returns:
-            New GameState after round scoring.
+            Snapshot of game state after round scoring.
         """
         # TODO: Implement scoring logic
         # TODO: Check for game end condition
@@ -136,5 +167,5 @@ class Game:
         Returns:
             The Player object with highest score.
         """
-        # TODO: Find player with highest score in current state
+        # TODO: Find player with highest score
         return self.players[0]

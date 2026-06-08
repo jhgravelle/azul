@@ -122,3 +122,87 @@ def test_current_player_index():
     # Simulate turn 4 (should wrap to player 0 in 3-player game)
     # This won't work yet since we can't directly create GameStates,
     # but the property should work correctly
+
+
+def test_start_round_fills_factories():
+    """Test that start_round fills all factories with tiles."""
+    p1 = Player(1, "Alice", "🎮", "blue", "human")
+    p2 = Player(2, "Bob", "🤖", "red", "bot")
+
+    game = Game([p1, p2], random_seed=42)
+
+    # Initial state should have empty factories
+    assert len(game.factories[Source.F1]) == 0
+    assert len(game.factories[Source.F5]) == 0
+    assert len(game.factories[Source.CENTER]) == 0
+
+    # After start_round, each factory should have 4 tiles
+    state = game.start_round()
+
+    assert len(game.factories[Source.F1]) == 4
+    assert len(game.factories[Source.F2]) == 4
+    assert len(game.factories[Source.F3]) == 4
+    assert len(game.factories[Source.F4]) == 4
+    assert len(game.factories[Source.F5]) == 4
+    assert len(game.factories[Source.CENTER]) == 0
+
+    # Bag and discard should be updated
+    total_tiles = len(game.bag) + len(game.discard)
+    total_in_factories = sum(len(tiles) for tiles in game.factories.values())
+    assert total_tiles + total_in_factories == TILES_PER_COLOR * len(COLORS)
+
+
+def test_start_round_records_state_in_history():
+    """Test that start_round records state in history."""
+    p1 = Player(1, "Alice", "🎮", "blue", "human")
+    p2 = Player(2, "Bob", "🤖", "red", "bot")
+
+    game = Game([p1, p2], random_seed=42)
+
+    # Initial state in history
+    assert len(game.states) == 1
+
+    # After start_round, state is recorded
+    game.start_round()
+    assert len(game.states) == 2
+
+    # Second start_round also records state
+    game.start_round()
+    assert len(game.states) == 3
+
+
+def test_fill_factories_with_insufficient_tiles():
+    """Test that fill_factories handles case when not enough tiles."""
+    p1 = Player(1, "Alice", "🎮", "blue", "human")
+    p2 = Player(2, "Bob", "🤖", "red", "bot")
+
+    game = Game([p1, p2], random_seed=42)
+
+    # Reduce tiles to less than needed for full factories
+    game.discard = game.discard[:10]  # Only 10 tiles
+
+    game.start_round()
+
+    # Should have filled as many as possible
+    total_in_factories = sum(len(tiles) for tiles in game.factories.values())
+    assert total_in_factories == 10
+
+
+def test_fill_factories_refills_from_discard():
+    """Test that fill_factories refills bag from discard during factory filling."""
+    p1 = Player(1, "Alice", "🎮", "blue", "human")
+    p2 = Player(2, "Bob", "🤖", "red", "bot")
+
+    game = Game([p1, p2], random_seed=42)
+
+    # Set up: only 12 tiles in discard (enough for 3 factories, will need to refill bag)
+    game.discard = [Tile.BLUE] * 4 + [Tile.RED] * 4 + [Tile.YELLOW] * 4
+
+    game.start_round()
+
+    # Should have filled 3 factories completely (12 tiles), partial 4th
+    assert len(game.factories[Source.F1]) == 4
+    assert len(game.factories[Source.F2]) == 4
+    assert len(game.factories[Source.F3]) == 4
+    assert len(game.factories[Source.F4]) == 0  # Not enough tiles
+    assert len(game.factories[Source.F5]) == 0
