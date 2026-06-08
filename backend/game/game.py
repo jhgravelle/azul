@@ -132,6 +132,57 @@ class Game:
         self.states.append(self.current_state)
         return self.current_state
 
+    def get_legal_moves(self) -> List[Move]:
+        """Generate all legal moves for the current player.
+
+        Returns:
+            List of all valid moves the current player can make.
+        """
+        moves = []
+        state = self.current_state
+        player_idx = state.current_player_index
+        player_state = self.player_states[player_idx]
+
+        # For each source
+        for source in Source:
+            source_tiles = self.factories[source]
+            if not source_tiles:
+                continue
+
+            # Get unique tile colors in this source (exclude FIRST token)
+            unique_tiles = {t for t in source_tiles if t != Tile.FIRST}
+
+            for tile in unique_tiles:
+                tile_count = source_tiles.count(tile)
+                includes_first = Tile.FIRST in source_tiles
+
+                # Try placing in each destination
+                for destination in Destination:
+                    if destination == Destination.FLOOR:
+                        # Can always place tiles on floor
+                        moves.append(Move(
+                            source=source,
+                            tile=tile,
+                            destination=destination,
+                            includes_first_player_token=includes_first,
+                            count=tile_count
+                        ))
+                    else:
+                        # Pattern line (R1-R5 map to rows 0-4)
+                        row = destination
+                        if self._can_place_in_pattern_line(
+                            player_state, row, tile, tile_count
+                        ):
+                            moves.append(Move(
+                                source=source,
+                                tile=tile,
+                                destination=destination,
+                                includes_first_player_token=includes_first,
+                                count=tile_count
+                            ))
+
+        return moves
+
     def make_move(self, move: Move) -> GameState:
         """Validate and apply a player move, updating game state.
 
@@ -142,13 +193,85 @@ class Game:
             Snapshot of game state after the move.
 
         Raises:
-            ValueError: If move is invalid.
+            ValueError: If move is not in the legal move list.
         """
-        # TODO: Validate move
-        # TODO: Apply move
-        # TODO: Increment turn_number
-        # TODO: Append to moves and states
+        legal_moves = self.get_legal_moves()
+        if move not in legal_moves:
+            raise ValueError(f"Move {move} is not legal")
+
+        player_idx = self.current_state.current_player_index
+        player_state = self.player_states[player_idx]
+
+        # Remove tiles from source
+        source_tiles = self.factories[move.source]
+        tiles_taken = [t for t in source_tiles if t == move.tile]
+        for tile in tiles_taken:
+            source_tiles.remove(tile)
+
+        # If taking from factory, move remaining tiles to center
+        if move.source != Source.CENTER:
+            self.factories[Source.CENTER].extend(source_tiles)
+            self.factories[move.source] = []
+
+        # Remove first player token if taken
+        if move.includes_first_player_token:
+            if Tile.FIRST in source_tiles:
+                source_tiles.remove(Tile.FIRST)
+
+        # Place tiles in destination
+        if move.destination == Destination.FLOOR:
+            player_state.floor.extend(tiles_taken)
+            if move.includes_first_player_token:
+                player_state.floor.append(Tile.FIRST)
+        else:
+            player_state.pattern_lines[move.destination].extend(tiles_taken)
+
+        # Update turn and history
+        self.turn_number += 1
+        self.moves.append(move)
+        self.states.append(self.current_state)
+
         return self.current_state
+
+    def _can_place_in_pattern_line(
+        self, player_state: PlayerState, row: int, tile: Tile, count: int
+    ) -> bool:
+        """Check if tiles can be placed in a pattern line."""
+        if self._is_pattern_line_full(player_state, row):
+            return False
+
+        if self._pattern_line_started(player_state, row):
+            if not self._pattern_line_has_color(player_state, row, tile):
+                return False
+
+        if self._wall_has_color_in_row(player_state, row, tile):
+            return False
+
+        return True
+
+    def _is_pattern_line_full(
+        self, player_state: PlayerState, row: int
+    ) -> bool:
+        """Check if a pattern line has reached its capacity."""
+        return len(player_state.pattern_lines[row]) >= row + 1
+
+    def _pattern_line_started(
+        self, player_state: PlayerState, row: int
+    ) -> bool:
+        """Check if a pattern line has any tiles in it."""
+        return len(player_state.pattern_lines[row]) > 0
+
+    def _pattern_line_has_color(
+        self, player_state: PlayerState, row: int, tile: Tile
+    ) -> bool:
+        """Check if a pattern line contains a specific tile color."""
+        return any(t == tile for t in player_state.pattern_lines[row])
+
+    def _wall_has_color_in_row(
+        self, player_state: PlayerState, row: int, tile: Tile
+    ) -> bool:
+        """Check if a wall row already contains a specific tile color."""
+        return any(t == tile for t in player_state.wall[row])
 
     def end_round(self) -> GameState:
         """Execute end-of-round scoring and wall placement.
